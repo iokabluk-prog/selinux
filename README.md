@@ -183,6 +183,22 @@ Jun 16 13:03:20 192.168.1.8 systemd[1]: Started The nginx HTTP and reverse proxy
 libsemanage.semanage_direct_remove_key: Removing last nginx module (no other nginx module exists at another priority).
 [root@192 ~]#
 
+# 2. Обеспечение работоспособности приложения при включенном SELinux
+# Выполним установку ansible и git
+root@ubuntu01:~# sudo apt install ansible -y
+root@ubuntu01:~# sudo apt install git
+# Выполним клонирование репозитория
+git clone https://github.com/Nickmob/vagrant_selinux_dns_problems.git
+root@ubuntu01:~# git clone https://github.com/Nickmob/vagrant_selinux_dns_problems.git
+Cloning into 'vagrant_selinux_dns_problems'...
+remote: Enumerating objects: 32, done.
+remote: Counting objects: 100% (32/32), done.
+remote: Compressing objects: 100% (21/21), done.
+remote: Total 32 (delta 9), reused 29 (delta 9), pack-reused 0 (from 0)
+Receiving objects: 100% (32/32), 7.23 KiB | 617.00 KiB/s, done.
+Resolving deltas: 100% (9/9), done.
+
+
  
 
 
