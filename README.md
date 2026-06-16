@@ -72,6 +72,17 @@ Jun 16 12:42:39 192.168.1.8 nginx[19924]: nginx: configuration file /etc/nginx/n
 Jun 16 12:42:39 192.168.1.8 systemd[1]: Started The nginx HTTP and reverse proxy server.
 # Скрин, что nginx работает по http://192.168.1.8:4881/
 <img width="1736" height="760" alt="image" src="https://github.com/user-attachments/assets/951eeba5-9669-4a79-9b47-f7167c93165c" />
+[root@192 ~]# getsebool -a | grep nis_enabled
+nis_enabled --> on
+# Вернём запрет работы nginx на порту 4881 обратно. Для этого отключим nis_enabled: setsebool -P nis_enabled off
+[root@192 ~]# setsebool -P nis_enabled off
+[root@192 ~]# getsebool -a | grep nis_enabled
+nis_enabled --> off
+[root@192 ~]# systemctl restart nginx
+Job for nginx.service failed because the control process exited with error code.
+See "systemctl status nginx.service" and "journalctl -xeu nginx.service" for details.
+
+
 
 
 
