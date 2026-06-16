@@ -49,5 +49,31 @@ type=AVC msg=audit(1781612436.520:189): avc:  denied  { name_bind } for  pid=194
         # setsebool -P nis_enabled 1
 # Видим, что необходимо изменить параметр  nis_enabled
 [root@192 ~]# setsebool -P nis_enabled on
+[root@192 ~]# systemctl restart nginx
+[root@192 ~]# systemctl status nginx
+● nginx.service - The nginx HTTP and reverse proxy server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: active (running) since Tue 2026-06-16 12:42:39 UTC; 10s ago
+    Process: 19923 ExecStartPre=/usr/bin/rm -f /run/nginx.pid (code=exited, status=0/SUCCESS)
+    Process: 19924 ExecStartPre=/usr/sbin/nginx -t (code=exited, status=0/SUCCESS)
+    Process: 19925 ExecStart=/usr/sbin/nginx (code=exited, status=0/SUCCESS)
+   Main PID: 19926 (nginx)
+      Tasks: 3 (limit: 12012)
+     Memory: 2.9M
+        CPU: 105ms
+     CGroup: /system.slice/nginx.service
+             ├─19926 "nginx: master process /usr/sbin/nginx"
+             ├─19927 "nginx: worker process"
+             └─19928 "nginx: worker process"
+
+Jun 16 12:42:39 192.168.1.8 systemd[1]: Starting The nginx HTTP and reverse proxy server...
+Jun 16 12:42:39 192.168.1.8 nginx[19924]: nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+Jun 16 12:42:39 192.168.1.8 nginx[19924]: nginx: configuration file /etc/nginx/nginx.conf test is successf>
+Jun 16 12:42:39 192.168.1.8 systemd[1]: Started The nginx HTTP and reverse proxy server.
+# Скрин, что nginx работает по http://192.168.1.8:4881/
+<img width="1736" height="760" alt="image" src="https://github.com/user-attachments/assets/951eeba5-9669-4a79-9b47-f7167c93165c" />
+
+
+
 
 
