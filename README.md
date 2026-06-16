@@ -31,6 +31,7 @@ nginx: configuration file /etc/nginx/nginx.conf test is successful
 # Проверяем режим работы SELinux
 [root@192 ~]# getenforce
 Enforcing
+
 # Разрешим в SELinux работу nginx на порту TCP 4881 c помощью переключателей setsebool
 # Находим в логах (/var/log/audit/audit.log) информацию о блокировании порта
 [root@192 ~]# cat /var/log/audit/audit.log |grep 4881
@@ -81,6 +82,8 @@ nis_enabled --> off
 [root@192 ~]# systemctl restart nginx
 Job for nginx.service failed because the control process exited with error code.
 See "systemctl status nginx.service" and "journalctl -xeu nginx.service" for details.
+
+# Теперь разрешим в SELinux работу nginx на порту TCP 4881 c помощью добавления нестандартного порта в имеющийся тип
 
 
 
