@@ -144,6 +144,47 @@ Jun 16 12:58:11 192.168.1.8 systemd[1]: nginx.service: Control process exited, c
 Jun 16 12:58:11 192.168.1.8 systemd[1]: nginx.service: Failed with result 'exit-code'.
 Jun 16 12:58:11 192.168.1.8 systemd[1]: Failed to start The nginx HTTP and reverse proxy server.
 
+# Разрешим в SELinux работу nginx на порту TCP 4881 c помощью формирования и установки модуля SELinux
+# Посмотрим логи SELinux, которые относятся к Nginx
+[root@192 ~]# grep nginx /var/log/audit/audit.log
+type=SERVICE_START msg=audit(1781614691.100:263): pid=1 uid=0 auid=4294967295 ses=4294967295 subj=system_u:system_r:init_t:s0 msg='unit=nginx comm="systemd" exe="/usr/lib/systemd/systemd" hostname=? addr=? terminal=? res=failed'UID="root" AUID="unset"
+# Воспользуемся утилитой audit2allow для того, чтобы на основе логов SELinux сделать модуль, разрешающий работу nginx на нестандартном порту
+[root@192 ~]# grep nginx /var/log/audit/audit.log | audit2allow -M nginx
+******************** IMPORTANT ***********************
+To make this policy package active, execute:
+
+semodule -i nginx.pp
+# Audit2allow сформировал модуль, и сообщил нам команду, с помощью которой можно применить данный модуль: semodule -i nginx.pp
+[root@192 ~]# semodule -i nginx.pp
+[root@192 ~]# systemctl start nginx
+[root@192 ~]# systemctl status nginx
+● nginx.service - The nginx HTTP and reverse proxy server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: active (running) since Tue 2026-06-16 13:03:20 UTC; 17s ago
+    Process: 20053 ExecStartPre=/usr/bin/rm -f /run/nginx.pid (code=exited, status=0/SUCCESS)
+    Process: 20054 ExecStartPre=/usr/sbin/nginx -t (code=exited, status=0/SUCCESS)
+    Process: 20055 ExecStart=/usr/sbin/nginx (code=exited, status=0/SUCCESS)
+   Main PID: 20056 (nginx)
+      Tasks: 3 (limit: 12012)
+     Memory: 2.9M
+        CPU: 98ms
+     CGroup: /system.slice/nginx.service
+             ├─20056 "nginx: master process /usr/sbin/nginx"
+             ├─20057 "nginx: worker process"
+             └─20058 "nginx: worker process"
+
+Jun 16 13:03:20 192.168.1.8 systemd[1]: Starting The nginx HTTP and reverse proxy server...
+Jun 16 13:03:20 192.168.1.8 nginx[20054]: nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+Jun 16 13:03:20 192.168.1.8 nginx[20054]: nginx: configuration file /etc/nginx/nginx.conf test is successf>
+Jun 16 13:03:20 192.168.1.8 systemd[1]: Started The nginx HTTP and reverse proxy server.
+# После добавления модуля nginx запустился без ошибок. При использовании модуля изменения сохранятся после перезагрузки. 
+# Просмотр всех установленных модулей: semodule -l
+[root@192 ~]# semodule -r nginx
+libsemanage.semanage_direct_remove_key: Removing last nginx module (no other nginx module exists at another priority).
+[root@192 ~]#
+
+ 
+
 
 
 
