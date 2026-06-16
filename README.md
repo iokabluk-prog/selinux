@@ -119,6 +119,31 @@ Jun 16 12:55:12 192.168.1.8 nginx[19978]: nginx: configuration file /etc/nginx/n
 Jun 16 12:55:12 192.168.1.8 systemd[1]: Started The nginx HTTP and reverse proxy server.
 # Скрин, что nginx работает по http://192.168.1.8:4881/
 <img width="1713" height="673" alt="image" src="https://github.com/user-attachments/assets/fc865bf5-012d-4b6c-abec-b3a3e99f0c45" />
+# Удаляем нестандартный порт из имеющегося типа можно с помощью команды: semanage port -d -t http_port_t -p tcp 4881
+[root@192 ~]# semanage port -d -t http_port_t -p tcp 4881
+[root@192 ~]# semanage port -l | grep  http_port_t
+http_port_t                    tcp      80, 81, 443, 488, 8008, 8009, 8443, 9000
+pegasus_http_port_t            tcp      5988
+[root@192 ~]# systemctl restart nginx
+Job for nginx.service failed because the control process exited with error code.
+See "systemctl status nginx.service" and "journalctl -xeu nginx.service" for details.
+[root@192 ~]# systemctl status nginx
+× nginx.service - The nginx HTTP and reverse proxy server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: failed (Result: exit-code) since Tue 2026-06-16 12:58:11 UTC; 27s ago
+   Duration: 2min 58.558s
+    Process: 19999 ExecStartPre=/usr/bin/rm -f /run/nginx.pid (code=exited, status=0/SUCCESS)
+    Process: 20001 ExecStartPre=/usr/sbin/nginx -t (code=exited, status=1/FAILURE)
+        CPU: 40ms
+
+Jun 16 12:58:11 192.168.1.8 systemd[1]: Starting The nginx HTTP and reverse proxy server...
+Jun 16 12:58:11 192.168.1.8 nginx[20001]: nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+Jun 16 12:58:11 192.168.1.8 nginx[20001]: nginx: [emerg] bind() to 0.0.0.0:4881 failed (13: Permission den>
+Jun 16 12:58:11 192.168.1.8 nginx[20001]: nginx: configuration file /etc/nginx/nginx.conf test failed
+Jun 16 12:58:11 192.168.1.8 systemd[1]: nginx.service: Control process exited, code=exited, status=1/FAILU>
+Jun 16 12:58:11 192.168.1.8 systemd[1]: nginx.service: Failed with result 'exit-code'.
+Jun 16 12:58:11 192.168.1.8 systemd[1]: Failed to start The nginx HTTP and reverse proxy server.
+
 
 
 
