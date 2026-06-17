@@ -18,7 +18,7 @@ Jun 16 12:20:36 192.168.1.8 nginx[19475]: nginx: configuration file /etc/nginx/n
 Jun 16 12:20:36 192.168.1.8 systemd[1]: nginx.service: Control process exited, code=exited, status=1/FAILU>
 Jun 16 12:20:36 192.168.1.8 systemd[1]: nginx.service: Failed with result 'exit-code'.
 Jun 16 12:20:36 192.168.1.8 systemd[1]: Failed to start The nginx HTTP and reverse proxy server.
-# Проверяем статуч firewalld
+# Проверяем статус firewalld
 [root@192 ~]# systemctl status firewalld
 ○ firewalld.service - firewalld - dynamic firewall daemon
      Loaded: loaded (/usr/lib/systemd/system/firewalld.service; enabled; preset: enabled)
