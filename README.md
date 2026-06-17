@@ -189,17 +189,73 @@ root@ubuntu01:~# sudo apt install ansible -y
 root@ubuntu01:~# sudo apt install git
 # Выполним клонирование репозитория
 git clone https://github.com/Nickmob/vagrant_selinux_dns_problems.git
-root@ubuntu01:~# git clone https://github.com/Nickmob/vagrant_selinux_dns_problems.git
-Cloning into 'vagrant_selinux_dns_problems'...
-remote: Enumerating objects: 32, done.
-remote: Counting objects: 100% (32/32), done.
-remote: Compressing objects: 100% (21/21), done.
-remote: Total 32 (delta 9), reused 29 (delta 9), pack-reused 0 (from 0)
-Receiving objects: 100% (32/32), 7.23 KiB | 617.00 KiB/s, done.
-Resolving deltas: 100% (9/9), done.
+# Развернём 2 ВМ с помощью vagrant
+# Vagrant в WSL  с VirtualBox, установленным в Windows
+ubuntuadmin@WS01:~/vagrant_project$ vagrant up client
+# Содержание Vagrantfile
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+Vagrant.configure(2) do |config|
+  config.vm.box = "almalinux/9"
+  config.vm.box_url = "file:///mnt/c/vagrant_projects/my_vm/vagrant_selinux_dns_problems/package.box"
 
+  config.vm.boot_timeout = 600
 
- 
+  config.vm.provider "virtualbox" do |v|
+    v.memory = 2048
+    v.cpus = 2
+    v.gui = false
+    v.customize ["modifyvm", :id, "--graphicscontroller", "vmsvga"]
+    v.customize ["modifyvm", :id, "--accelerate3d", "off"]
+    v.customize ["modifyvm", :id, "--vram", "16"]
+  end
+
+  config.vm.define "ns01" do |ns01|
+    ns01.vm.synced_folder ".", "/vagrant", disabled: true
+    ns01.vm.network "private_network", ip: "192.168.50.10", virtualbox__intnet: "dns"
+    ns01.vm.hostname = "ns01"
+
+    # Используем реальный IP
+    ns01.ssh.host = "192.168.1.6"
+    ns01.ssh.port = 22
+    ns01.ssh.username = "vagrant"
+    # НЕ УКАЗЫВАЕМ private_key_path - Vagrant сам создаст ключи
+
+    ns01.vm.provision "shell", inline: <<-SHELL
+      echo "blacklist vboxvideo" > /etc/modprobe.d/blacklist-vboxvideo.conf
+      systemctl restart sshd
+      dracut --force
+    SHELL
+  end
+
+  config.vm.define "client" do |client|
+    client.vm.synced_folder ".", "/vagrant", disabled: true
+    client.vm.network "private_network", ip: "192.168.50.15", virtualbox__intnet: "dns"
+    client.vm.hostname = "client"
+
+    client.ssh.host = "192.168.1.7"  # или другой IP
+    client.ssh.port = 22
+    client.ssh.username = "vagrant"
+    # НЕ УКАЗЫВАЕМ private_key_path
+
+    client.vm.provision "shell", inline: <<-SHELL
+      echo "blacklist vboxvideo" > /etc/modprobe.d/blacklist-vboxvideo.conf
+      systemctl restart sshd
+      dracut --force
+    SHELL
+  end
+
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "provisioning/playbook.yml"
+    ansible.become = "true"
+    ansible.limit = "all"
+    ansible.verbose = "v"
+    ansible.groups = {
+      "dns_servers" => ["ns01"],
+      "clients" => ["client"]
+    }
+  end
+ # 
 
 
 
