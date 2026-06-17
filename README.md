@@ -255,11 +255,286 @@ Vagrant.configure(2) do |config|
       "clients" => ["client"]
     }
   end
- # 
+ # Проверяем статус ВМ
+ ubuntuadmin@WS01:~/vagrant_project$ vagrant status
+Current machine states:
+
+ns01                      running (virtualbox)
+client                    running (virtualbox)
+
+This environment represents multiple VMs. The VMs are all listed
+above with their current state. For more information about a specific
+VM, run `vagrant status NAME`.
+# Подключимся к клиенту
+ubuntuadmin@WS01:~/vagrant_project$ vagrant ssh client
+###############################
+### Welcome to the DNS lab! ###
+###############################
+
+- Use this client to test the enviroment
+- with dig or nslookup. Ex:
+    dig @192.168.50.10 ns01.dns.lab
+
+- nsupdate is available in the ddns.lab zone. Ex:
+    nsupdate -k /etc/named.zonetransfer.key
+    server 192.168.50.10
+    zone ddns.lab
+    update add www.ddns.lab. 60 A 192.168.50.15
+    send
+
+- rndc is also available to manage the servers
+    rndc -c ~/rndc.conf reload
+
+###############################
+### Enjoy! ####################
+###############################
+Last login: Wed Jun 17 10:40:47 2026 from 192.168.1.5
+[vagrant@client ~]$
+# Попробуем внести изменения в зону
+[vagrant@client ~]$ nsupdate -k /etc/named.zonetransfer.key
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+update failed: SERVFAIL
+> quit
+# Изменения внести не получилось. Давайте посмотрим логи SELinux, чтобы понять в чём может быть проблема
+[root@client ~]# cat /var/log/audit/audit.log | audit2why
+type=AVC msg=audit(1781691313.814:609): avc:  denied  { dac_read_search } for  pid=3362 comm="20-chrony-dhcp" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0
+
+        Was caused by:
+                Missing type enforcement (TE) allow rule.
+
+                You can use audit2allow to generate a loadable module to allow this access.
 
 
+# Процесс: 20-chrony-dhcp (PID 3424) — это скрипт NetworkManager, который запускается при изменении сети для настройки chrony (службы синхронизации времени)
 
+# Действие запрещено: { dac_read_search } — процесс пытается обойти обычные права доступа к файлам (DAC = Discretionary Access Control)
 
+# Возможность (capability): capability=2 (CAP_DAC_READ_SEARCH) — процессу нужно читать файлы и каталоги, к которым у него нет прямого доступа
 
+# Контекст: И источник, и цель — NetworkManager_dispatcher_chronyc_t (один и тот же контекст)
 
+# Статус: permissive=0 — SELinux включён в режиме enforcing и блокирует действие
+# Сгенерировать модуль на основе сообщения из лога
+echo "type=AVC msg=audit(1781691316.405:624): avc:  denied  { dac_read_search } for  pid=3424 comm=\"20-chrony-dhcp\" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0" | audit2allow -M chrony-dhcp-dac
+# Установить созданный модуль
+sudo semodule -i chrony-dhcp-dac.pp
+# Не закрывая сессию на клиенте, подключимся к серверу ns01 и проверим логи SELinux
+[vagrant@ns01 ~]$ cat /var/log/audit/audit.log | audit2why
+cat: /var/log/audit/audit.log: Permission denied
+Nothing to do
+[vagrant@ns01 ~]$ sudo -i
+[root@ns01 ~]# cat /var/log/audit/audit.log | audit2why
+type=AVC msg=audit(1781686028.947:631): avc:  denied  { dac_read_search } for  pid=3414 comm="20-chrony-dhcp" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0
 
+        Was caused by:
+                Missing type enforcement (TE) allow rule.
+
+                You can use audit2allow to generate a loadable module to allow this access.
+# Ошибка та же
+# Создать модуль из конкретного сообщения на клиенте
+echo "type=AVC msg=audit(1781686028.947:631): avc:  denied  { dac_read_search } for  pid=3414 comm=\"20-chrony-dhcp\" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0" | audit2allow -M chrony-dhcp-dac
+
+# Установить на  клиенте
+sudo semodule -i chrony-dhcp-dac.pp
+# Модуль добавляет правило на клиенте
+allow NetworkManager_dispatcher_chronyc_t self:capability dac_read_search;
+# Это разрешает процессу с этим контекстом использовать capability CAP_DAC_READ_SEARCH
+# Выполним перезагрузку клиента
+# Полсе перезагрузки осталась ошибка
+[vagrant@client ~]$ nsupdate -k /etc/named.zonetransfer.key
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+update failed: SERVFAIL
+> quit
+[vagrant@client ~]$ sudo -i
+[root@client ~]# cat /var/log/audit/audit.log | audit2why
+type=AVC msg=audit(1781696176.968:34): avc:  denied  { open } for  pid=829 comm="20-chrony-dhcp" path="/etc/sysconfig/network-scripts/ifcfg-eth1" dev="sda4" ino=17015107 scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=unconfined_u:object_r:user_tmp_t:s0 tclass=file permissive=0
+
+        Was caused by:
+                Missing type enforcement (TE) allow rule.
+
+                You can use audit2allow to generate a loadable module to allow this access.
+# Файл /etc/sysconfig/network-scripts/ifcfg-eth1 имеет контекст user_tmp_t (временный пользовательский), а должен иметь контекст net_conf_t или etc_t.
+scontext: NetworkManager_dispatcher_chronyc_t (процесс)
+tcontext: user_tmp_t (файл) ← НЕПРАВИЛЬНЫЙ КОНТЕКСТ!
+# Посмотреть текущий контекст
+[root@client ~]# ls -Z /etc/sysconfig/network-scripts/ifcfg-eth1
+unconfined_u:object_r:user_tmp_t:s0 /etc/sysconfig/network-scripts/ifcfg-eth1
+# Восстановить правильный контекст для всех файлов в каталоге
+[root@client ~]# restorecon -Rv /etc/sysconfig/network-scripts/
+Relabeled /etc/sysconfig/network-scripts/ifcfg-eth1 from unconfined_u:object_r:user_tmp_t:s0 to unconfined_u:object_r:net_conf_t:s0
+[root@client ~]# ls -Z /etc/sysconfig/network-scripts/ifcfg-eth1
+unconfined_u:object_r:net_conf_t:s0 /etc/sysconfig/network-scripts/ifcfg-eth1
+# После перезагрузки на клиенте ошибок нет
+# Подключаемся к ns01 и проверим логи SELinux
+[root@ns01 ~]# cat /var/log/audit/audit.log | audit2why
+type=AVC msg=audit(1781686028.947:631): avc:  denied  { dac_read_search } for  pid=3414 comm="20-chrony-dhcp" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0
+
+        Was caused by:
+                Missing type enforcement (TE) allow rule.
+
+                You can use audit2allow to generate a loadable module to allow this access.
+
+[root@ns01 ~]# echo "type=AVC msg=audit(1781686028.947:631): avc:  denied  { dac_read_search } for  pid=3414 comm=\"20-chrony-dhcp\" capability=2  scontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tcontext=system_u:system_r:NetworkManager_dispatcher_chronyc_t:s0 tclass=capability permissive=0" | audit2allow -M chrony-dhcp-dac
+******************** IMPORTANT ***********************
+To make this policy package active, execute:
+
+semodule -i chrony-dhcp-dac.pp
+
+[root@ns01 ~]# sudo semodule -i chrony-dhcp-dac.pp
+# Перезагрузим сервер
+# Осталась ошибка 
+[root@ns01 ~]# cat /var/log/audit/audit.log | audit2why | grep -E "denied|ERROR|Permission" | tail -n 1
+type=AVC msg=audit(1781697418.288:79): avc:  denied  { write } for  pid=806 comm="isc-net-0001" name="dynamic" dev="sda4" ino=16864157 scontext=system_u:system_r:named_t:s0 tcontext=unconfined_u:object_r:named_conf_t:s0 tclass=dir permissive=0
+# В логах мы видим, что ошибка в контексте безопасности. Целевой контекст named_conf_t
+# Для сравнения посмотрим существующую зону (localhost) и её контекст
+[root@ns01 ~]# ls -alZ /var/named/named.localhost
+-rw-r-----. 1 root named system_u:object_r:named_zone_t:s0 152 Jun 10 13:05 /var/named/named.localhost
+# У наших конфигов в /etc/named вместо типа named_zone_t используется тип named_conf_t.
+# Проверим данную проблему в каталоге /etc/named:
+[root@ns01 ~]# ls -laZ /etc/named
+total 28
+drw-rwx---.  3 root named system_u:object_r:named_conf_t:s0      121 Jun 17 08:56 .
+drwxr-xr-x. 87 root root  system_u:object_r:etc_t:s0            8192 Jun 17 11:55 ..
+drw-rwx---.  2 root named unconfined_u:object_r:named_conf_t:s0   56 Jun 17 08:56 dynamic
+-rw-rw----.  1 root named system_u:object_r:named_conf_t:s0      805 Jun 17 08:56 named.50.168.192.rev
+-rw-rw----.  1 root named system_u:object_r:named_conf_t:s0      628 Jun 17 08:56 named.dns.lab
+-rw-rw----.  1 root named system_u:object_r:named_conf_t:s0      626 Jun 17 08:55 named.dns.lab.view1
+-rw-rw----.  1 root named system_u:object_r:named_conf_t:s0      676 Jun 17 08:56 named.newdns.lab
+# Тут мы также видим, что контекст безопасности неправильный. Проблема заключается в том, что конфигурационные файлы лежат в другом каталоге. Посмотреть в каком каталоги должны лежать, файлы, чтобы на них распространялись правильные политики SELinux можно с помощью команды: sudo semanage fcontext -l | grep named
+[root@ns01 ~]# sudo semanage fcontext -l | grep named
+/dev/gpmdata                                       named pipe         system_u:object_r:gpmctl_t:s0
+/dev/initctl                                       named pipe         system_u:object_r:initctl_t:s0
+/dev/xconsole                                      named pipe         system_u:object_r:xconsole_device_t:s0
+/dev/xen/tapctrl.*                                 named pipe         system_u:object_r:xenctl_t:s0
+/etc/named(/.*)?                                   all files          system_u:object_r:named_conf_t:s0
+/etc/named\.caching-nameserver\.conf               regular file       system_u:object_r:named_conf_t:s0
+/etc/named\.conf                                   regular file       system_u:object_r:named_conf_t:s0
+/etc/named\.rfc1912.zones                          regular file       system_u:object_r:named_conf_t:s0
+/etc/named\.root\.hints                            regular file       system_u:object_r:named_conf_t:s0
+/etc/rc\.d/init\.d/named                           regular file       system_u:object_r:named_initrc_exec_t:s0
+/etc/rc\.d/init\.d/named-sdb                       regular file       system_u:object_r:named_initrc_exec_t:s0
+/etc/rc\.d/init\.d/unbound                         regular file       system_u:object_r:named_initrc_exec_t:s0
+/etc/rndc.*                                        regular file       system_u:object_r:named_conf_t:s0
+/etc/unbound(/.*)?                                 all files          system_u:object_r:named_conf_t:s0
+/usr/lib/systemd/system/named-sdb.*                regular file       system_u:object_r:named_unit_file_t:s0
+/usr/lib/systemd/system/named.*                    regular file       system_u:object_r:named_unit_file_t:s0
+/usr/lib/systemd/system/unbound.*                  regular file       system_u:object_r:named_unit_file_t:s0
+/usr/lib/systemd/systemd-hostnamed                 regular file       system_u:object_r:systemd_hostnamed_exec_t:s0
+/usr/sbin/lwresd                                   regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/named                                    regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/named-checkconf                          regular file       system_u:object_r:named_checkconf_exec_t:s0
+/usr/sbin/named-pkcs11                             regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/named-sdb                                regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/unbound                                  regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/unbound-anchor                           regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/unbound-checkconf                        regular file       system_u:object_r:named_exec_t:s0
+/usr/sbin/unbound-control                          regular file       system_u:object_r:named_exec_t:s0
+/usr/share/munin/plugins/named                     regular file       system_u:object_r:services_munin_plugin_exec_t:s0
+/var/lib/softhsm(/.*)?                             all files          system_u:object_r:named_cache_t:s0
+/var/lib/unbound(/.*)?                             all files          system_u:object_r:named_cache_t:s0
+/var/log/named.*                                   regular file       system_u:object_r:named_log_t:s0
+/var/named(/.*)?                                   all files          system_u:object_r:named_zone_t:s0
+/var/named/chroot(/.*)?                            all files          system_u:object_r:named_conf_t:s0
+/var/named/chroot/dev                              directory          system_u:object_r:device_t:s0
+/var/named/chroot/dev/log                          socket             system_u:object_r:devlog_t:s0
+/var/named/chroot/dev/null                         character device   system_u:object_r:null_device_t:s0
+/var/named/chroot/dev/random                       character device   system_u:object_r:random_device_t:s0
+/var/named/chroot/dev/urandom                      character device   system_u:object_r:urandom_device_t:s0
+/var/named/chroot/dev/zero                         character device   system_u:object_r:zero_device_t:s0
+/var/named/chroot/etc(/.*)?                        all files          system_u:object_r:etc_t:s0
+/var/named/chroot/etc/localtime                    regular file       system_u:object_r:locale_t:s0
+/var/named/chroot/etc/named\.caching-nameserver\.conf regular file       system_u:object_r:named_conf_t:s0
+/var/named/chroot/etc/named\.conf                  regular file       system_u:object_r:named_conf_t:s0
+/var/named/chroot/etc/named\.rfc1912.zones         regular file       system_u:object_r:named_conf_t:s0
+/var/named/chroot/etc/named\.root\.hints           regular file       system_u:object_r:named_conf_t:s0
+/var/named/chroot/etc/pki(/.*)?                    all files          system_u:object_r:cert_t:s0
+/var/named/chroot/etc/rndc\.key                    regular file       system_u:object_r:dnssec_t:s0
+/var/named/chroot/lib(/.*)?                        all files          system_u:object_r:lib_t:s0
+/var/named/chroot/proc(/.*)?                       all files          <<None>>
+/var/named/chroot/run/named.*                      all files          system_u:object_r:named_var_run_t:s0
+/var/named/chroot/usr/lib(/.*)?                    all files          system_u:object_r:lib_t:s0
+/var/named/chroot/var/log                          directory          system_u:object_r:var_log_t:s0
+/var/named/chroot/var/log/named.*                  regular file       system_u:object_r:named_log_t:s0
+/var/named/chroot/var/named(/.*)?                  all files          system_u:object_r:named_zone_t:s0
+/var/named/chroot/var/named/data(/.*)?             all files          system_u:object_r:named_cache_t:s0
+/var/named/chroot/var/named/dynamic(/.*)?          all files          system_u:object_r:named_cache_t:s0
+/var/named/chroot/var/named/named\.ca              regular file       system_u:object_r:named_conf_t:s0
+/var/named/chroot/var/named/slaves(/.*)?           all files          system_u:object_r:named_cache_t:s0
+/var/named/chroot/var/run/dbus(/.*)?               all files          system_u:object_r:system_dbusd_var_run_t:s0
+/var/named/chroot/var/run/named.*                  all files          system_u:object_r:named_var_run_t:s0
+/var/named/chroot/var/tmp(/.*)?                    all files          system_u:object_r:named_cache_t:s0
+/var/named/chroot_sdb/dev                          directory          system_u:object_r:device_t:s0
+/var/named/chroot_sdb/dev/null                     character device   system_u:object_r:null_device_t:s0
+/var/named/chroot_sdb/dev/random                   character device   system_u:object_r:random_device_t:s0
+/var/named/chroot_sdb/dev/urandom                  character device   system_u:object_r:urandom_device_t:s0
+/var/named/chroot_sdb/dev/zero                     character device   system_u:object_r:zero_device_t:s0
+/var/named/data(/.*)?                              all files          system_u:object_r:named_cache_t:s0
+/var/named/dynamic(/.*)?                           all files          system_u:object_r:named_cache_t:s0
+/var/named/named\.ca                               regular file       system_u:object_r:named_conf_t:s0
+/var/named/slaves(/.*)?                            all files          system_u:object_r:named_cache_t:s0
+/var/run/bind(/.*)?                                all files          system_u:object_r:named_var_run_t:s0
+/var/run/ecblp0                                    named pipe         system_u:object_r:cupsd_var_run_t:s0
+/var/run/initctl                                   named pipe         system_u:object_r:initctl_t:s0
+/var/run/named(/.*)?                               all files          system_u:object_r:named_var_run_t:s0
+/var/run/ndc                                       socket             system_u:object_r:named_var_run_t:s0
+/var/run/systemd/initctl/fifo                      named pipe         system_u:object_r:initctl_t:s0
+/var/run/unbound(/.*)?                             all files          system_u:object_r:named_var_run_t:s0
+/var/named/chroot/usr/lib64 = /usr/lib
+/var/named/chroot/lib64 = /usr/lib
+/var/named/chroot/var = /var
+
+# Изменим тип контекста безопасности для каталога /etc/named: sudo chcon -R -t named_zone_t /etc/named
+
+[root@ns01 ~]# sudo chcon -R -t named_zone_t /etc/named
+[root@ns01 ~]# ls -laZ /etc/named
+total 28
+drw-rwx---.  3 root named system_u:object_r:named_zone_t:s0      121 Jun 17 08:56 .
+drwxr-xr-x. 87 root root  system_u:object_r:etc_t:s0            8192 Jun 17 11:55 ..
+drw-rwx---.  2 root named unconfined_u:object_r:named_zone_t:s0   56 Jun 17 08:56 dynamic
+-rw-rw----.  1 root named system_u:object_r:named_zone_t:s0      805 Jun 17 08:56 named.50.168.192.rev
+-rw-rw----.  1 root named system_u:object_r:named_zone_t:s0      628 Jun 17 08:56 named.dns.lab
+-rw-rw----.  1 root named system_u:object_r:named_zone_t:s0      626 Jun 17 08:55 named.dns.lab.view1
+-rw-rw----.  1 root named system_u:object_r:named_zone_t:s0      676 Jun 17 08:56 named.newdns.lab
+
+# Попробуем снова внести изменения с клиента:
+[root@client ~]# nsupdate -k /etc/named.zonetransfer.key
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+update failed: SERVFAIL
+> quit
+[root@client ~]# nsupdate -k /etc/named.zonetransfer.key
+> server 192.168.50.10
+> zone ddns.lab
+> update add www.ddns.lab. 60 A 192.168.50.15
+> send
+> quit
+[root@client ~]# dig www.ddns.lab
+
+; <<>> DiG 9.16.23-RH <<>> www.ddns.lab
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 38632
+;; flags: qr rd ra ad; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 512
+;; QUESTION SECTION:
+;www.ddns.lab.                  IN      A
+
+;; AUTHORITY SECTION:
+.                       790     IN      SOA     a.root-servers.net. nstld.verisign-grs.com. 2026061700 1800 900 604800 86400
+
+;; Query time: 17 msec
+;; SERVER: 192.168.1.1#53(192.168.1.1)
+;; WHEN: Wed Jun 17 12:09:16 UTC 2026
+;; MSG SIZE  rcvd: 116
+
+# Видим, что изменения применились. Попробуем перезагрузить хосты и ещё раз сделать запрос с помощью dig
