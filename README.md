@@ -531,10 +531,32 @@ update failed: SERVFAIL
 
 ;; AUTHORITY SECTION:
 .                       790     IN      SOA     a.root-servers.net. nstld.verisign-grs.com. 2026061700 1800 900 604800 86400
+# Перезагружаем клиента и сервер и проверяем настройки
+[vagrant@client ~]$ dig @192.168.50.10 www.ddns.lab
+
+; <<>> DiG 9.16.23-RH <<>> @192.168.50.10 www.ddns.lab
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 37590
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+; COOKIE: 0fcd2c22daebb9b2010000006a328f63cd2970aade66d7e9 (good)
+;; QUESTION SECTION:
+;www.ddns.lab.                  IN      A
+
+;; ANSWER SECTION:
+www.ddns.lab.           60      IN      A       192.168.50.15
+
+;; Query time: 23 msec
+;; SERVER: 192.168.50.10#53(192.168.50.10)
+;; WHEN: Wed Jun 17 12:13:23 UTC 2026
+;; MSG SIZE  rcvd: 85
 
 ;; Query time: 17 msec
 ;; SERVER: 192.168.1.1#53(192.168.1.1)
 ;; WHEN: Wed Jun 17 12:09:16 UTC 2026
 ;; MSG SIZE  rcvd: 116
-
-# Видим, что изменения применились. Попробуем перезагрузить хосты и ещё раз сделать запрос с помощью dig
+# Успешно выполнили DNS-запрос к серверу 192.168.50.10 для домена www.ddns.lab
